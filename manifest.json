@@ -1,0 +1,18 @@
+{
+  "name": "Dimnote",
+  "id": "e9f699d4-0a4e-4849-9f6e-400e237cb467",
+  "api": "1.0.0",
+  "main": "code.js",
+  "documentAccess": "dynamic-page",
+  "editorType": [
+    "figma"
+  ],
+  "isTool": true,
+  "relaunchButtons": [
+    {
+      "command": "e9f699d4-0a4e-4849-9f6e-400e237cb467",
+      "name": "Dimnote"
+    }
+  ],
+  "ui": "ui.html"
+}
