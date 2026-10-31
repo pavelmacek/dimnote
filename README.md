@@ -1,0 +1,2 @@
+# dimnote
+Dimnote Figma Plugin
