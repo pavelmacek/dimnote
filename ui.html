@@ -1,0 +1,553 @@
+<!doctype html>
+<html>
+<head>
+  <script>
+    try {
+      window.localStorage.getItem('x')
+    } catch (e) {
+      const store = new Map()
+      const shim = {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => {
+          store.set(k, String(v))
+        },
+        removeItem: (k) => {
+          store.delete(k)
+        },
+        clear: () => {
+          store.clear()
+        },
+        key: (i) => Array.from(store.keys())[i] ?? null,
+        get length() {
+          return store.size
+        },
+      }
+      Object.defineProperty(window, 'localStorage', { value: shim, configurable: true })
+    }
+  </script>
+  <style>
+    html, body { margin: 0; padding: 0; height: auto; min-height: 0; }
+    #plugin-root { height: auto; }
+    body { display: block; }
+    #plugin-root fig-field {
+      --fig-field-label-ratio: 112px;
+      --fig-field-input-ratio: 1fr;
+    }
+    body > #plugin-root > fig-footer {
+      background-color: var(--figma-color-bg);
+      box-shadow: inset 0 1px 0 0 var(--figma-color-border);
+      border-radius: 0 0 var(--radius-large) var(--radius-large);
+    }
+    #plugin-root .info-icon,
+    #plugin-root .info-icon:hover,
+    #plugin-root .info-icon:active {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--figma-color-bg-secondary);
+      color: var(--figma-color-text-secondary);
+      font-size: 9px;
+      font-weight: 600;
+      font-family: var(--font-family);
+      cursor: help;
+      margin-left: 4px;
+      flex-shrink: 0;
+      vertical-align: middle;
+      border: 0;
+      padding: 0;
+      box-shadow: none;
+      line-height: 14px;
+    }
+    dialog.info-tooltip-popup[variant="tooltip"] {
+      max-width: min(288px, calc(100vw - 16px));
+      max-height: none;
+    }
+    dialog.info-tooltip-popup[variant="tooltip"] > span {
+      display: block;
+      max-height: none;
+      overflow: visible;
+      -webkit-line-clamp: unset;
+      line-clamp: unset;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .position-panel {
+      padding: 6px 8px 14px;
+      border-bottom: 1px solid var(--figma-color-border);
+    }
+    .position-heading {
+      margin: 0 8px 4px;
+      color: var(--figma-color-text);
+      font: 600 11px/16px var(--font-family);
+      overflow-wrap: anywhere;
+    }
+    .position-help {
+      margin: 0 8px 10px;
+      color: var(--figma-color-text-secondary);
+      font: 400 11px/16px var(--font-family);
+    }
+    #plugin-root .info-icon:focus-visible {
+      outline: 2px solid var(--figma-color-border-brand);
+      outline-offset: 2px;
+    }
+    .position-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 8px;
+    }
+    .position-action-item {
+      display: flex;
+      flex: 0 0 auto;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--figma-color-text-secondary);
+      font: 400 10px/14px var(--font-family);
+    }
+    .position-action-item:first-child .position-action {
+      align-self: flex-start;
+    }
+    .position-action-item:last-child .position-action {
+      align-self: flex-end;
+    }
+    .position-action svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+      pointer-events: none;
+    }
+    dialog.fig-fill-picker-dialog {
+      width: 300px;
+      max-width: 300px;
+      min-width: 300px;
+      max-height: none;
+      height: max-content;
+    }
+    .reset-panel {
+      padding: 8px 16px 12px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+    .reset-panel fig-button {
+      min-width: 0;
+      width: 100%;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .appearance-button-label {
+      display: block;
+      white-space: nowrap;
+      line-height: 16px;
+    }
+    .appearance-heading {
+      margin: 4px 16px 0;
+      padding: 10px 0 4px;
+      color: var(--figma-color-text-secondary);
+      font: 600 11px/16px var(--font-family);
+    }
+    .appearance-heading:first-child {
+      margin-top: 0;
+      padding-top: 4px;
+    }
+    .scale-control {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+    .scale-example {
+      color: var(--figma-color-text-secondary);
+      font: 400 11px/16px var(--font-family);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="plugin-root">
+    <fig-content>
+      <div class="position-panel">
+        <div class="position-heading">
+          <span id="position-status" aria-live="polite">Annotate selected layers</span>
+        </div>
+        <p class="position-help">Select layers, then click a side to add. <fig-tooltip action="hover" delay="0" text="With no layer selected, click an annotation button to add a freeform annotation you can move and resize on the canvas."><button type="button" id="annotation-info" class="info-icon" aria-label="About freeform annotations">i</button></fig-tooltip></p>
+        <div class="position-actions">
+          <div class="position-action-item">
+            <fig-button class="position-action" data-placement="auto" variant="secondary" icon title="Auto: radius for circles; outline sides for irregular straight polygons; width and height otherwise" aria-label="Auto annotation">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="5" y="5" width="6" height="6"/><path d="M5 2h6M5 14h6M2 5v6M14 5v6"/></svg>
+            </fig-button>
+            <span>Auto</span>
+          </div>
+          <div class="position-action-item">
+            <fig-button class="position-action" data-placement="up" variant="secondary" icon title="Annotate above: radius for circles, width for other shapes" aria-label="Annotate top">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="4" y="6" width="8" height="7"/><path d="M3 2h10"/></svg>
+            </fig-button>
+            <span>Top</span>
+          </div>
+          <div class="position-action-item">
+            <fig-button class="position-action" data-placement="down" variant="secondary" icon title="Annotate below: radius for circles, width for other shapes" aria-label="Annotate bottom">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="4" y="3" width="8" height="7"/><path d="M3 14h10"/></svg>
+            </fig-button>
+            <span>Bottom</span>
+          </div>
+          <div class="position-action-item">
+            <fig-button class="position-action" data-placement="left" variant="secondary" icon title="Annotate left: radius for circles, height for other shapes" aria-label="Annotate left">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="6" y="4" width="7" height="8"/><path d="M2 3v10"/></svg>
+            </fig-button>
+            <span>Left</span>
+          </div>
+          <div class="position-action-item">
+            <fig-button class="position-action" data-placement="right" variant="secondary" icon title="Annotate right: radius for circles, height for other shapes" aria-label="Annotate right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="3" y="4" width="7" height="8"/><path d="M14 3v10"/></svg>
+            </fig-button>
+            <span>Right</span>
+          </div>
+        </div>
+      </div>
+      <fig-group name="Measurement" collapsible open="true">
+        <fig-field>
+          <label>Units</label>
+          <fig-dropdown id="units" value="mm"><option value="mm" selected>mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option><option value="ft">ft</option></fig-dropdown>
+        </fig-field>
+        <fig-field>
+          <label>Scale <fig-tooltip action="hover" delay="0" text="How many units equal 1 pixel. For example, set to 10 if 1px = 10mm in your drawing."><button type="button" class="info-icon" aria-label="About scale">i</button></fig-tooltip></label>
+          <div class="scale-control">
+            <fig-input-number id="scale" value="1" step="0.001" min="0.001" style="width: 100%;"></fig-input-number>
+            <span id="scale-example" class="scale-example">1px = 1mm</span>
+          </div>
+        </fig-field>
+      </fig-group>
+      <fig-group name="Appearance" collapsible>
+        <div class="appearance-heading">Layout</div>
+        <fig-field>
+          <label>Line distance <fig-tooltip action="hover" delay="0" text="Distance from the layer edge to the dimension line."><button type="button" class="info-icon" aria-label="About line distance">i</button></fig-tooltip></label>
+          <fig-slider id="offset" type="range" min="12" max="80" step="1" units="px" value="30" text></fig-slider>
+        </fig-field>
+        <fig-field>
+          <label>Label gap <fig-tooltip action="hover" delay="0" text="Space between the dimension line and the label text."><button type="button" class="info-icon" aria-label="About label gap">i</button></fig-tooltip></label>
+          <fig-slider id="labelOffset" type="range" min="6" max="30" step="1" units="px" value="10" text></fig-slider>
+        </fig-field>
+        <div class="appearance-heading">Lines</div>
+        <fig-field>
+          <label>Endpoints <fig-tooltip action="hover" delay="0" text="Linear dimensions use Slash ticks, open line Arrow heads, or filled Triangle heads. Radius dimensions always use one filled triangle arrowhead at the curve."><button type="button" class="info-icon" aria-label="About endpoints">i</button></fig-tooltip></label>
+          <fig-options id="endpointStyle" options="Slash, Arrow, Triangle" value="Slash" sizing="auto"></fig-options>
+        </fig-field>
+        <fig-field>
+          <label>Weight</label>
+          <fig-slider id="strokeWeight" type="range" min="0.25" max="5" step="0.25" units="px" value="1" text></fig-slider>
+        </fig-field>
+        <fig-field>
+          <label>Color</label>
+          <fig-input-color id="lineColor" value="#999999FF" alpha="true" picker="figma-native"></fig-input-color>
+        </fig-field>
+        <div class="appearance-heading">Labels</div>
+        <fig-field>
+          <label>Font family</label>
+          <fig-dropdown id="fontFamily" value="Roboto Mono"><option value="Roboto Mono" selected>Roboto Mono</option></fig-dropdown>
+        </fig-field>
+        <fig-field>
+          <label>Font size</label>
+          <fig-slider id="fontSize" type="range" min="6" max="32" step="1" units="px" value="14" text></fig-slider>
+        </fig-field>
+        <fig-field>
+          <label>Decimals <fig-tooltip action="hover" delay="0" text="Maximum decimal precision (0-4). Whole numbers omit the decimal part, and unnecessary trailing zeros are omitted."><button type="button" class="info-icon" aria-label="About decimals">i</button></fig-tooltip></label>
+          <fig-slider id="decimals" type="range" min="0" max="4" step="1" value="1" text></fig-slider>
+        </fig-field>
+        <fig-field>
+          <label>Font color</label>
+          <fig-input-color id="fontColor" value="#999999FF" alpha="true" picker="figma-native"></fig-input-color>
+        </fig-field>
+        <div class="reset-panel">
+          <fig-button id="reset-appearance" variant="secondary"><span class="appearance-button-label">Reset appearance</span></fig-button>
+          <fig-button id="update-appearance" variant="secondary"><span class="appearance-button-label">Update appearance of all</span></fig-button>
+        </div>
+      </fig-group>
+    </fig-content>
+  </div>
+  <script>
+    // PropsKit render() creates a portaled dialog > span. Scope the unclamping
+    // to these six tips; retain its viewport flipping, focus and hover lifecycle.
+    for (const icon of document.querySelectorAll('.info-icon')) {
+      const tooltip = icon.parentElement
+      customElements.whenDefined('fig-tooltip').then(() => {
+        const render = tooltip.render
+        tooltip.render = function () {
+          render.call(this)
+          this.popup.classList.add('info-tooltip-popup')
+        }
+      })
+    }
+
+    let lastReportedHeight = 0
+    let resizeRaf = 0
+
+    function measurePanelHeight() {
+      const root = document.getElementById('plugin-root')
+      if (!root) return 0
+      let h = Math.ceil(root.getBoundingClientRect().height)
+      const openDialog = document.querySelector('dialog.fig-fill-picker-dialog[open]')
+      if (openDialog) h = Math.max(h, Math.ceil(openDialog.getBoundingClientRect().bottom))
+      return h
+    }
+
+    function reportHeight() {
+      const h = measurePanelHeight()
+      if (h && h !== lastReportedHeight) {
+        lastReportedHeight = h
+        parent.postMessage({ pluginMessage: { type: 'resize', height: h } }, '*')
+      }
+    }
+
+    const pluginRoot = document.getElementById('plugin-root')
+    if (pluginRoot && typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => {
+        if (resizeRaf) cancelAnimationFrame(resizeRaf)
+        resizeRaf = requestAnimationFrame(reportHeight)
+      }).observe(pluginRoot)
+    }
+
+    new MutationObserver(() => {
+      if (resizeRaf) cancelAnimationFrame(resizeRaf)
+      resizeRaf = requestAnimationFrame(reportHeight)
+    }).observe(document.body, {
+      childList: true,
+      attributes: true,
+      attributeFilter: ['open'],
+      subtree: true,
+    })
+
+    function parseHex(value, alpha = 1) {
+      const hex = String(value || '').trim().replace(/^#/, '')
+      if (!/^(?:[\da-f]{6}|[\da-f]{8})$/i.test(hex)) return null
+      const read = (start) => Number.parseInt(hex.slice(start, start + 2), 16) / 255
+      return { r: read(0), g: read(2), b: read(4), a: hex.length === 8 ? read(6) : alpha }
+    }
+
+    const colorState = new Map(['fontColor', 'lineColor'].map((id) => [id, {
+      color: parseHex(document.getElementById(id).getAttribute('value')) || parseHex('#999999FF'),
+      editing: false,
+    }]))
+
+    function colorValue(id, includeDraft = true) {
+      const input = document.getElementById(id)
+      const state = colorState.get(id)
+      const text = input.querySelector('fig-input-text:not([type="number"])')
+      return (includeDraft ? parseHex(state.editing ? text.value : input.value, state.editing ? state.color.a : 1) : null) || state.color
+    }
+
+    function colorToHex(value) {
+      const color = typeof value === 'object' && value !== null ? value : {}
+      const channel = (component, fallback) => {
+        const numeric = Number(component)
+        return Math.round(Math.max(0, Math.min(1, Number.isFinite(numeric) ? numeric : fallback)) * 255)
+          .toString(16)
+          .padStart(2, '0')
+          .toUpperCase()
+      }
+      return '#' + channel(color.r, 0.6) + channel(color.g, 0.6) + channel(color.b, 0.6) + channel(color.a, 1)
+    }
+
+    const endpointMap = { slash: 'Slash', 'line-arrow': 'Arrow', arrow: 'Triangle' }
+    const endpointReverseMap = { Slash: 'slash', Arrow: 'line-arrow', Triangle: 'arrow' }
+
+    function hasParam(values, name) {
+      return Object.prototype.hasOwnProperty.call(values, name)
+    }
+
+    function setControlValue(id, value) {
+      const input = document.getElementById(id)
+      if (!input) return
+      const state = colorState.get(id)
+      if (state) {
+        // Selection/action feedback must not replace a draft or move its caret.
+        if (state.editing || input.matches(':focus-within')) return
+        state.color = parseHex(value, state.color.a) || state.color
+      }
+      const next = String(value)
+      if (input.value !== next) input.value = next
+      if (input.getAttribute('value') !== next) input.setAttribute('value', next)
+    }
+
+    function updateScaleExample() {
+      const example = document.getElementById('scale-example')
+      const scaleInput = document.getElementById('scale')
+      const unitsInput = document.getElementById('units')
+      if (!example || !scaleInput || !unitsInput) return
+      const scale = Number(scaleInput.value)
+      const displayScale = Number.isFinite(scale) ? String(scale) : '?'
+      const units = String(unitsInput.value || '')
+      example.textContent = '1px = ' + displayScale + units
+    }
+
+    let isApplyingParams = false
+
+    function setPanelParams(values) {
+      if (typeof values !== 'object' || values === null) return
+      isApplyingParams = true
+      try {
+        if (hasParam(values, "units")) setControlValue("units", values.units)
+        if (hasParam(values, "scale")) setControlValue("scale", values.scale)
+        if (hasParam(values, "decimals")) setControlValue("decimals", values.decimals)
+        if (hasParam(values, "offset")) setControlValue("offset", values.offset)
+        if (hasParam(values, "labelOffset")) setControlValue("labelOffset", values.labelOffset)
+        if (hasParam(values, "strokeWeight")) setControlValue("strokeWeight", values.strokeWeight)
+        if (hasParam(values, "fontSize")) setControlValue("fontSize", values.fontSize)
+        if (hasParam(values, "fontColor")) setControlValue("fontColor", colorToHex(values.fontColor))
+        if (hasParam(values, "lineColor")) setControlValue("lineColor", colorToHex(values.lineColor))
+        if (hasParam(values, "fontFamily")) setControlValue("fontFamily", values.fontFamily)
+        if (hasParam(values, "endpointStyle")) setControlValue("endpointStyle", endpointMap[values.endpointStyle] || 'Slash')
+        updateScaleExample()
+      } finally {
+        isApplyingParams = false
+      }
+    }
+
+    function currentParams(placement = 'auto', includeColorDraft = true) {
+      return {
+        units: String(document.getElementById('units').value),
+        scale: Number(document.getElementById('scale').value),
+        decimals: Number(document.getElementById('decimals').value),
+        offset: Number(document.getElementById('offset').value),
+        labelOffset: Number(document.getElementById('labelOffset').value),
+        strokeWeight: Number(document.getElementById('strokeWeight').value),
+        fontSize: Number(document.getElementById('fontSize').value),
+        fontFamily: String(document.getElementById('fontFamily').value || 'Roboto Mono'),
+        fontColor: colorValue('fontColor', includeColorDraft),
+        lineColor: colorValue('lineColor', includeColorDraft),
+        showWidth: placement === 'auto' || placement === 'up' || placement === 'down',
+        showHeight: placement === 'auto' || placement === 'left' || placement === 'right',
+        placement,
+        endpointStyle: endpointReverseMap[String(document.getElementById('endpointStyle').value)] || 'slash',
+      }
+    }
+
+    let persistQueued = false
+    let pendingParams = null
+    function persistCurrentParams() {
+      if (isApplyingParams) return
+      pendingParams = currentParams('auto', false)
+      if (persistQueued) return
+      persistQueued = true
+      Promise.resolve().then(() => {
+        persistQueued = false
+        parent.postMessage({ pluginMessage: { type: 'params-update', params: pendingParams } }, '*')
+        pendingParams = null
+      })
+    }
+
+    for (const [id, state] of colorState) {
+      const input = document.getElementById(id)
+      const handleHex = (event) => {
+        const text = input.querySelector('fig-input-text:not([type="number"])')
+        if (event.target !== text) return
+        // PropsKit normalizes its hex text on every input (including partials).
+        // Intercept the text control's events before that color handler runs.
+        event.stopPropagation()
+        state.editing = true
+        if (event.type !== 'change') return
+        const color = parseHex(text.value, state.color.a)
+        if (!color) return
+        state.color = color
+        persistCurrentParams()
+      }
+      input.addEventListener('input', handleHex, true)
+      input.addEventListener('change', handleHex, true)
+      input.addEventListener('focusout', (event) => {
+        const text = input.querySelector('fig-input-text:not([type="number"])')
+        if (!state.editing || !text.contains(event.target)) return
+        const color = parseHex(text.value, state.color.a)
+        if (color) state.color = color
+        state.editing = false
+        const hex = colorToHex(state.color)
+        input.value = hex
+        input.setAttribute('value', hex)
+        // The attribute may already equal the last committed value after an invalid edit.
+        text.value = hex.slice(1, 7)
+        if (color) persistCurrentParams()
+      })
+    }
+
+    function handleParamsChange(event) {
+      const state = colorState.get(event.target.id)
+      if (state) {
+        if (event.type !== 'change') return
+        const color = parseHex(event.detail?.value || event.target.value)
+        if (!color) return
+        state.color = color
+        state.editing = false
+      }
+      updateScaleExample()
+      persistCurrentParams()
+    }
+
+    pluginRoot.addEventListener('input', handleParamsChange)
+    pluginRoot.addEventListener('change', handleParamsChange)
+    updateScaleExample()
+
+    for (const button of document.querySelectorAll('.position-action')) {
+      button.addEventListener('click', () => {
+        const placement = String(button.getAttribute('data-placement') || 'auto')
+        parent.postMessage({ pluginMessage: { type: 'action', id: "add-dimensions", params: currentParams(placement) } }, '*')
+      })
+    }
+
+    document.getElementById('reset-appearance').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'reset-appearance' } }, '*')
+    })
+
+    document.getElementById('update-appearance').addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'action', id: 'update-appearance', params: currentParams() } }, '*')
+    })
+
+
+    window.onmessage = (event) => {
+      const msg = event.data && event.data.pluginMessage
+      if (!msg) return
+      if (msg.type === 'available-fonts') {
+        const dropdown = document.getElementById('fontFamily')
+        if (dropdown && Array.isArray(msg.fonts)) {
+          const currentVal = String(dropdown.value || dropdown.getAttribute('value') || 'Roboto Mono')
+          const families = msg.fonts.map(String)
+          const selectedFamily = families.includes(currentVal)
+            ? currentVal
+            : (families.includes('Roboto Mono') ? 'Roboto Mono' : (families[0] || 'Roboto Mono'))
+          const replacement = document.createElement('fig-dropdown')
+          replacement.id = 'fontFamily'
+          replacement.setAttribute('label', 'Font family')
+          replacement.setAttribute('value', selectedFamily)
+          for (const family of families) {
+            const opt = document.createElement('option')
+            opt.value = family
+            opt.textContent = family
+            opt.selected = family === selectedFamily
+            replacement.appendChild(opt)
+          }
+          dropdown.replaceWith(replacement)
+          replacement.value = selectedFamily
+        }
+        return
+      }
+      if (msg.type === 'params-change') {
+        setPanelParams(msg.params)
+        return
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const msg = event.data && event.data.pluginMessage
+      if (!msg || msg.type !== 'action-state' || !msg.actions) return
+      {
+        const a = msg.actions["add-dimensions"]
+        const status = document.getElementById('position-status')
+        if (a && status && typeof a.status === 'string') status.textContent = a.status
+      }
+    })
+
+  </script>
+</body>
+</html>
